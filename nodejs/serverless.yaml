@@ -1,0 +1,87 @@
+service: mail-handler
+plugins:
+ - serverless-pseudo-parameters
+ - serverless-offline
+package:
+ exclude:
+  - .dynamodb/**
+  - .serverless/**
+   
+provider:
+ name: aws
+ runtime: nodejs10.x
+ region: us-east-1
+ memorySize: 128
+ stage: ${opt:stage}
+ iamRoleStatements:
+  - Effect: "Allow"
+   Action:
+    - "sqs:ListQueues"
+   Resource: "*"
+  - Effect: "Allow"
+   Action:
+    - "sqs:*"
+   Resource: "arn:aws:sqs:*:*:*"
+  - Effect: "Allow"
+   Action:
+    - "lambda:InvokeFunction"
+   Resource: "*"
+  - Effect: "Allow"
+   Action:
+    - "ses:SendEmail"
+    - "ses:SendRawEmails"
+   Resource: "*"
+  - Effect: Allow
+   Action:
+   - logs:CreateLogGroup
+   - logs:CreateLogStream
+   - logs:PutLogEvents
+   Resource: arn:aws:logs:*:*:*
+  - Effect: Allow
+   Action:
+   - sqs:GetQueueAttributes
+   Resource: arn:aws:sqs:*:*:*
+functions:
+ receiver:
+  handler: main.handler
+  timeout: 15
+  vpc:
+   securityGroupIds:
+    - sg-0c52ab4a370c4ed35
+   subnetIds:
+    - subnet-0a2c147dba4cf5d49
+    - subnet-00724cfe0105f70d1
+  environment:
+   sendyAPIkey: XXXXXXXXXXXX
+   from_email: info@xxxx.com
+   env_type: ${opt:stage}
+  events:
+   - sqs:
+     arn:
+      Fn::GetAtt:
+       - MailQueue
+       - Arn
+ SQSMonitoring:
+  handler: SQSMonitoring.handler
+  environment:
+   MainQueueURL: !Ref MailQueue    
+   DeadLetterQueueURL: !Ref DeadLetterQueue  
+  events:
+   - http:
+     path: status
+     method: get
+resources:
+ Resources:
+  MailQueue:
+   Type: "AWS::SQS::Queue"
+   Properties:
+    QueueName: "MailQueue-${opt:stage}"
+    MessageRetentionPeriod: 86400
+    RedrivePolicy:
+     deadLetterTargetArn: !GetAtt DeadLetterQueue.Arn
+     maxReceiveCount: 5
+  DeadLetterQueue:
+   Type: "AWS::SQS::Queue"
+   Properties:
+    QueueName: "DeadLetterQueue-${opt:stage}"
+    MessageRetentionPeriod: 604800
